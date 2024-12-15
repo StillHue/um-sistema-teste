@@ -10,11 +10,23 @@ ASSYST_HOME_URL = "https://portalllk.lanlink.com.br/assystweb/application.do#mai
 def obter_token_csrf():
     session = requests.Session()
     response = session.get(ASSYST_LOGIN_URL)
+    
     if response.status_code != 200:
-        return None
+        return None, None
+    
+    # Aqui vamos imprimir o HTML da página para análise
+    print(response.text)  # Apenas para debug, remova depois de identificar o problema
+
     soup = BeautifulSoup(response.text, "html.parser")
-    token = soup.find("input", {"name": "org.apache.struts.taglib.html.TOKEN"})['value']
-    return token, session
+    
+    # Tentando encontrar o CSRF token
+    token = soup.find("input", {"name": "org.apache.struts.taglib.html.TOKEN"})
+    if token:
+        csrf_token = token['value']
+        return csrf_token, session
+    else:
+        # Se o token não for encontrado, tente outra abordagem
+        return None, None
 
 def fazer_login(usuario, senha, session, csrf_token):
     login_data = {
