@@ -14,7 +14,6 @@ def realizar_login(usuario, senha):
     
     response = session.get(LOGIN_URL, headers=headers)
     
-    # Verificar se obtemos a página de login corretamente
     if response.status_code != 200:
         st.error("Erro ao acessar a página de login.")
         return None
@@ -22,19 +21,20 @@ def realizar_login(usuario, senha):
     soup = BeautifulSoup(response.text, 'html.parser')
 
     csrf_token = None
+    # Tentando encontrar o CSRF Token de diferentes maneiras
     for input_tag in soup.find_all('input'):
-        if input_tag.get('name') == 'CSRFToken':  # Verificar o nome correto do token
+        if input_tag.get('name') == 'CSRFToken':  # Verifique o nome correto do token
             csrf_token = input_tag.get('value')
 
     if csrf_token is None:
-        st.error("Não foi possível encontrar o token CSRF.")
+        st.error("Não foi possível encontrar o token CSRF. Verifique a página.")
         return None
 
     login_data = {
         'username': usuario,
         'password': senha,
         'login_button': 'Login',  # Verifique o nome correto do botão
-        'CSRFToken': csrf_token  # Adicionar o token CSRF (se necessário)
+        'CSRFToken': csrf_token  # Adicionar o token CSRF
     }
 
     login_response = session.post(LOGIN_URL, data=login_data, headers=headers)
@@ -42,6 +42,7 @@ def realizar_login(usuario, senha):
     if "Bem-vindo" in login_response.text:  # Ajuste conforme o conteúdo da página pós-login
         return session
     else:
+        st.error("Login mal-sucedido, usuário ou senha inválidos.")
         return None
 
 def acessar_chamados(session):
