@@ -1,79 +1,62 @@
-import streamlit as st
+import requests
 import pandas as pd
-import time
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
+from bs4 import BeautifulSoup
+import streamlit as st
 
-def configurar_driver():
-    options = Options()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    driver = webdriver.Chrome(
-        service=Service(ChromeDriverManager().install()),
-        options=options
-    )
-    return driver
-
-def acessar_assyst(usuario, senha):
-    driver = configurar_driver()
-    chamados = []
-    try:
-        driver.get("https://portalllk.lanlink.com.br/assystweb/application.do")
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "username")))
-        driver.find_element(By.ID, "username").send_keys(usuario)
-        driver.find_element(By.ID, "password").send_keys(senha)
-        driver.find_element(By.ID, "login_button").click()
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "menu_chamados")))
-        driver.find_element(By.ID, "menu_chamados").click()
-        time.sleep(2)
-        driver.find_element(By.ID, "dijit_MenuItem_73_text").click()  # Filtro 1
-        time.sleep(2)
-        driver.find_element(By.ID, "dijit_MenuItem_74_text").click()  # Filtro 2
-        time.sleep(2)
-        driver.find_element(By.ID, "components_MenuItem_21_text").click()  # Filtro Especificações
-        time.sleep(2)
-        elementos_chamados = driver.find_elements(By.CSS_SELECTOR, ".chamado-row")
-        for chamado in elementos_chamados:
-            numero = chamado.find_element(By.CSS_SELECTOR, ".numero").text
-            descricao = chamado.find_element(By.CSS_SELECTOR, ".descricao").text
-            status = chamado.find_element(By.CSS_SELECTOR, ".status").text
-            data_abertura = chamado.find_element(By.CSS_SELECTOR, ".data-abertura").text
-            chamados.append({
-                "Número": numero,
-                "Descrição": descricao,
-                "Status": status,
-                "Data de Abertura": data_abertura
-            })
-    except Exception as e:
-        st.error(f"Ocorreu um erro: {str(e)}")
-    finally:
-        driver.quit()
-    
-    return pd.DataFrame(chamados)
-
-def save_file(df):
-    file_path = "/tmp/chamados_dezembro.xlsx"
-    df.to_excel(file_path, index=False)
-    return file_path
-
-st.title("Assyst Web - Sistema de Chamados")
-usuario = st.text_input("Usuário")
-senha = st.text_input("Senha", type="password")
-
-if st.button("Login"):
-    if usuario and senha:
-        df = acessar_assyst(usuario, senha)
-        if not df.empty:
-            st.success("Login bem-sucedido!")
-            st.dataframe(df)
-            file_path = save_file(df)
-            st.download_button("Baixar Relatório", file_path, file_name="chamados_dezembro.xlsx")
-        else:
-            st.error("Nenhum dado encontrado ou erro na consulta.")
+def login_ao_sistema(usuario, senha):
+    url_login = 'https://portalllk.lanlink.com.br/assystweb/application.do'
+    session = requests.Session()
+    login_data = {
+        'username': usuario,
+        'password': senha,
+    }
+    response = session.post(url_login, data=login_data)
+    if response.status_code == 200:
+        return session
     else:
-        st.warning("Por favor, insira seu usuário e senha.")
+        st.error("Falha no login. Verifique suas credenciais.")
+        return None
+
+def buscar_chamados(session, filtro):
+    url = 'https://portalllk.lanlink.com.br/assystweb/chamados.do'
+    response = session.get(url)
+    if response.status_code == 200:
+        soup = BeautifulSoup(response.text, 'html.parser')
+        dados = []
+        chamados = soup.find_all('div', class_='chamado-row')
+        for chamado in chamados:
+            numero = chamado.find('span', class_='numero').text.strip()
+            descricao = chamado.find('span', class_='descricao').text.strip()
+            status = chamado.find('span', class_='status').text.strip()
+            data_abertura = chamado.find('span', class_='data-abertura').text.strip()
+            dados.append([numero, descricao, status, data_abertura])
+        return pd.DataFrame(dados, columns=['Número', 'Descrição', 'Status', 'Data de Abertura'])
+    else:
+        st.error(f"Falha ao buscar dados. Código de status: {response.status_code}")
+        return pd.DataFrame()
+
+def app():
+    st.title('Sistema de Busca de Chamados')
+    usuario = st.text_input('Usuário')
+    senha = st.text_input('Senha', type='password')
+    if st.button('Login'):
+        session = login_ao_sistema(usuario, senha)
+        if session:
+            st.success('Login bem-sucedido!')
+            filtro = st.selectbox('Escolha o filtro', ['TJRN - 1N CHAMADOS', 'TJRN - 2N CHAMADOS'])
+            st.info(f'Filtro selecionado: {filtro}')
+            if st.button('Buscar Chamados'):
+                df = buscar_chamados(session, filtro)
+                if not df.empty:
+                    st.dataframe(df)
+                    st.download_button(
+                        label="Baixar Planilha",
+                        data=df.to_excel(index=False),
+                        file_name="chamados_dezembro.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+        else:
+            st.error('Não foi possível fazer login, tente novamente.')
+
+if __name__ == '__main__':
+    app()
