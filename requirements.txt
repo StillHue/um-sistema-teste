@@ -1,4 +1,3 @@
+streamlit
 selenium
 pandas
-streamlit
-webdriver-manager
