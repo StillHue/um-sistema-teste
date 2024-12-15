@@ -1,65 +1,50 @@
 import streamlit as st
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-import time
+import requests
 import pandas as pd
 
-def configurar_driver():
-    options = Options()
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-    driver = webdriver.Chrome(service=Service("/path/to/chromedriver"), options=options)
-    return driver
-
-def validar_login_web(usuario, senha):
-    driver = configurar_driver()
-    driver.get("https://portalllk.lanlink.com.br/assystweb/application.do")
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "username")))
-
-    driver.find_element(By.ID, "username").send_keys(usuario)
-    driver.find_element(By.ID, "password").send_keys(senha)
-    driver.find_element(By.ID, "login_button").click()
-    
+def autenticar_usuario(usuario, senha):
+    url_login = 'https://portalllk.lanlink.com.br/assystweb/application.do'
+    session = requests.Session()
+    dados = {
+        'username': usuario,
+        'password': senha
+    }
     try:
-        WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "menu_chamados")))
-        driver.quit()
-        return True  # Login bem-sucedido
-    except:
-        driver.quit()
-        return False  # Login falhou
+        resposta = session.post(url_login, data=dados)
+        if 'application.do' in resposta.url:
+            return session
+        else:
+            return None
+    except Exception as e:
+        print(f"Erro na autenticação: {e}")
+        return None
 
-def buscar_chamados(usuario, senha):
-    driver = configurar_driver()
-    driver.get("https://portalllk.lanlink.com.br/assystweb/application.do")
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "username")))
+def buscar_chamados(session, filtro):
+    url_chamados = 'https://portalllk.lanlink.com.br/assystweb/application.do#eventsearch%2FEventSearchDelegatingDispatchAction.do?dispatch=monitorInitNoResults'
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+    dados = {
+        'filtro': filtro
+    }
+    try:
+        resposta = session.post(url_chamados, data=dados, headers=headers)
+        if resposta.status_code == 200:
+            # Aqui, é necessário ajustar para extrair os dados específicos da página
+            chamados = parse_chamados(resposta.text)
+            return chamados
+        else:
+            return None
+    except Exception as e:
+        print(f"Erro ao buscar chamados: {e}")
+        return None
 
-    driver.find_element(By.ID, "username").send_keys(usuario)
-    driver.find_element(By.ID, "password").send_keys(senha)
-    driver.find_element(By.ID, "login_button").click()
-    
-    WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.ID, "menu_chamados")))
-    driver.find_element(By.ID, "menu_chamados").click()
-    time.sleep(2)
-    
-    chamados = []
-    elementos_chamados = driver.find_elements(By.CSS_SELECTOR, ".chamado-row")
-    for chamado in elementos_chamados:
-        numero = chamado.find_element(By.CSS_SELECTOR, ".numero").text
-        descricao = chamado.find_element(By.CSS_SELECTOR, ".descricao").text
-        status = chamado.find_element(By.CSS_SELECTOR, ".status").text
-        data_abertura = chamado.find_element(By.CSS_SELECTOR, ".data-abertura").text
-        chamados.append({
-            "Número": numero,
-            "Descrição": descricao,
-            "Status": status,
-            "Data de Abertura": data_abertura
-        })
-    driver.quit()
-    return pd.DataFrame(chamados)
+def parse_chamados(html):
+    # A lógica para extrair dados da página HTML deve ser inserida aqui
+    # Isso pode incluir o uso de BeautifulSoup ou outra ferramenta de parsing
+    return []
+
+def gerar_planilha(chamados):
+    df = pd.DataFrame(chamados)
+    return df
 
 def main():
     st.title('Sistema de Chamados')
@@ -69,15 +54,17 @@ def main():
 
     if st.button('Login'):
         if usuario and senha:
-            if validar_login_web(usuario, senha):
+            session = autenticar_usuario(usuario, senha)
+            if session:
                 st.success("Login bem-sucedido")
                 filtro = st.selectbox('Escolha o filtro', ['TJRN - 1N Chamados', 'TJRN - 2N Chamados', 'Especificações'])
 
                 if st.button('Buscar Chamados'):
-                    chamados = buscar_chamados(usuario, senha)
-                    if not chamados.empty:
-                        st.dataframe(chamados)
-                        st.download_button('Baixar Planilha', chamados.to_excel(index=False), file_name='chamados.xlsx')
+                    chamados = buscar_chamados(session, filtro)
+                    if chamados:
+                        df = gerar_planilha(chamados)
+                        st.dataframe(df)
+                        st.download_button('Baixar Planilha', df.to_excel(index=False), file_name='chamados.xlsx')
                     else:
                         st.error("Erro ao buscar chamados.")
             else:
