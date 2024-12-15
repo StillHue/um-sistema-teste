@@ -1,102 +1,46 @@
 import requests
-import streamlit as st
 from bs4 import BeautifulSoup
-import pandas as pd
 
 LOGIN_URL = "https://portalllk.lanlink.com.br/assystweb/application.do"
-CHAMADOS_URL = "https://portalllk.lanlink.com.br/assystweb/eventsearch/monitorInitNoResults.do"  # Ajuste conforme necessário para buscar os chamados
+SECURITY_CHECK_URL = "https://portalllk.lanlink.com.br/assystweb/j_security_check"  # A URL do login no Assyst
+USERNAME = "seu_usuario"
+PASSWORD = "sua_senha"
 
-def realizar_login(usuario, senha):
-    session = requests.Session()
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-    
-    response = session.get(LOGIN_URL, headers=headers)
-    
-    if response.status_code != 200:
-        st.error("Erro ao acessar a página de login.")
-        return None
+# Sessão que mantém os cookies durante as requisições
+session = requests.Session()
 
+# Cabeçalhos para imitar uma requisição de navegador normal
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+    'Content-Type': 'application/x-www-form-urlencoded'
+}
+
+# Acessa a página de login para obter qualquer dado necessário (ex: CSRF token)
+response = session.get(LOGIN_URL, headers=headers)
+if response.status_code == 200:
     soup = BeautifulSoup(response.text, 'html.parser')
 
+    # Se houver um token CSRF, busque-o na página (ajuste conforme necessário)
     csrf_token = None
-    # Tentando encontrar o CSRF Token de diferentes maneiras
-    for input_tag in soup.find_all('input'):
-        if input_tag.get('name') == 'CSRFToken':  # Verifique o nome correto do token
-            csrf_token = input_tag.get('value')
+    csrf_tag = soup.find('input', {'name': 'CSRFToken'})
+    if csrf_tag:
+        csrf_token = csrf_tag.get('value')
 
-    if csrf_token is None:
-        st.error("Não foi possível encontrar o token CSRF. Verifique a página.")
-        return None
-
+    # Dados para o formulário de login
     login_data = {
-        'username': usuario,
-        'password': senha,
-        'login_button': 'Login',  # Verifique o nome correto do botão
-        'CSRFToken': csrf_token  # Adicionar o token CSRF
+        'j_username': USERNAME,
+        'j_password': PASSWORD,
+        'CSRFToken': csrf_token if csrf_token else '',
+        'login_button': 'Login'  # Ajuste conforme o botão de login no sistema
     }
 
-    login_response = session.post(LOGIN_URL, data=login_data, headers=headers)
+    # Envia a requisição POST para o j_security_check
+    login_response = session.post(SECURITY_CHECK_URL, data=login_data, headers=headers)
 
-    if "Bem-vindo" in login_response.text:  # Ajuste conforme o conteúdo da página pós-login
-        return session
+    if login_response.status_code == 200 and "Bem-vindo" in login_response.text:
+        print("Login bem-sucedido!")
+        # Aqui você pode continuar para a próxima etapa, como buscar os chamados
     else:
-        st.error("Login mal-sucedido, usuário ou senha inválidos.")
-        return None
-
-def acessar_chamados(session):
-    response = session.get(CHAMADOS_URL)
-    
-    if response.status_code == 200:
-        soup = BeautifulSoup(response.text, 'html.parser')
-        chamados = []
-
-        for chamado in soup.find_all("div", class_="chamado"):  # Ajuste o seletor conforme necessário
-            numero = chamado.find("span", class_="numero").text.strip()
-            descricao = chamado.find("span", class_="descricao").text.strip()
-            status = chamado.find("span", class_="status").text.strip()
-            data_abertura = chamado.find("span", class_="data-abertura").text.strip()
-            chamados.append({
-                "Número": numero,
-                "Descrição": descricao,
-                "Status": status,
-                "Data de Abertura": data_abertura
-            })
-        
-        return pd.DataFrame(chamados)
-    else:
-        return None
-
-def main():
-    st.title("Sistema de Chamados Assyst")
-
-    usuario = st.text_input("Usuário")
-    senha = st.text_input("Senha", type="password")
-
-    if st.button("Login"):
-        session = realizar_login(usuario, senha)
-
-        if session:
-            st.success("Login bem-sucedido!")
-            st.session_state.session = session  # Salvar sessão no estado para uso posterior
-            st.button("Buscar Chamados")  # Botão para buscar dados
-
-            if st.button("Buscar Chamados"):
-                chamados_df = acessar_chamados(session)
-                if chamados_df is not None:
-                    st.success("Chamados encontrados!")
-                    st.write(chamados_df)  # Exibir a tabela com os chamados
-                    st.download_button(
-                        label="Baixar planilha",
-                        data=chamados_df.to_excel(index=False),
-                        file_name="chamados.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                else:
-                    st.error("Erro ao acessar os chamados.")
-        else:
-            st.error("Login mal-sucedido, usuário ou senha inválidos.")
-
-if __name__ == "__main__":
-    main()
+        print("Falha no login.")
+else:
+    print("Erro ao acessar a página de login.")
