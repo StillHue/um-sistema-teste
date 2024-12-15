@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import pandas as pd
+from bs4 import BeautifulSoup
 
 def autenticar_usuario(usuario, senha):
     url_login = 'https://portalllk.lanlink.com.br/assystweb/application.do'
@@ -11,7 +12,7 @@ def autenticar_usuario(usuario, senha):
     }
     try:
         resposta = session.post(url_login, data=dados)
-        if 'application.do' in resposta.url:
+        if 'application.do' not in resposta.url:
             return session
         else:
             return None
@@ -28,7 +29,6 @@ def buscar_chamados(session, filtro):
     try:
         resposta = session.post(url_chamados, data=dados, headers=headers)
         if resposta.status_code == 200:
-            # Aqui, é necessário ajustar para extrair os dados específicos da página
             chamados = parse_chamados(resposta.text)
             return chamados
         else:
@@ -38,9 +38,19 @@ def buscar_chamados(session, filtro):
         return None
 
 def parse_chamados(html):
-    # A lógica para extrair dados da página HTML deve ser inserida aqui
-    # Isso pode incluir o uso de BeautifulSoup ou outra ferramenta de parsing
-    return []
+    soup = BeautifulSoup(html, 'html.parser')
+    chamados = []
+    # Extração de dados dos chamados (ajuste conforme a estrutura HTML real)
+    for chamado in soup.find_all('div', class_='chamado-item'):
+        numero = chamado.find('span', class_='numero').get_text()
+        descricao = chamado.find('span', class_='descricao').get_text()
+        status = chamado.find('span', class_='status').get_text()
+        chamados.append({
+            'Número': numero,
+            'Descrição': descricao,
+            'Status': status
+        })
+    return chamados
 
 def gerar_planilha(chamados):
     df = pd.DataFrame(chamados)
